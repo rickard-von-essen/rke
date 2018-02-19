@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/rancher/rke/log"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -86,6 +88,28 @@ func makeSSHConfig(user string, signer ssh.Signer) (*ssh.ClientConfig, error) {
 		User: user,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
+	return &config, nil
+}
+
+func agentAuth(user string) (*ssh.ClientConfig, error) {
+	authSock := os.Getenv("SSH_AUTH_SOCK")
+	if authSock == "" {
+		return nil, fmt.Errorf("SSH_AUTH_SOCK is not set")
+	}
+
+	sshAgent, err := net.Dial("unix", authSock)
+	if err != nil {
+		return nil, fmt.Errorf("Cannot connect to SSH Agent socket %q: %s", authSock, err)
+	}
+
+	config := ssh.ClientConfig{
+		User: user,
+		Auth: []ssh.AuthMethod{
+			ssh.PublicKeysCallback(agent.NewClient(sshAgent).Signers),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
